@@ -32,14 +32,22 @@ export default function TodosScreen() {
     refresh();
   }, []);
 
-  const onAdd = () => {
-    const value = task.trim();
-    if (!value) return;
+const onAdd = async () => {
+  const value = task.trim();
+  if (!value) return;
 
-    addTodo(value);
+  try {
+    const result = await addTodo(value);
     setTask("");
     refresh();
-  };
+
+    if (!result.synced) {
+      Alert.alert("Saved locally", "Could not upload to Supabase yet.");
+    }
+  } catch (error: any) {
+    Alert.alert("Error", error.message ?? "Could not save todo.");
+  }
+};
 
   const onToggle = (item: TodoItem) => {
     toggleTodo(item.id, item.is_complete);
@@ -78,6 +86,7 @@ export default function TodosScreen() {
           style={styles.input}
         />
         <Button title="Add" onPress={onAdd} />
+        
       </View>
 
       <FlatList

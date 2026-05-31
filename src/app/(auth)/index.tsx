@@ -6,7 +6,7 @@ import {
   StyleSheet,
 } from "react-native";
 
-import { supabase } from "../../lib/supabase";
+import { getSupabase } from "../../lib/supabase";
 import { useRouter } from "expo-router";
 
 export default function LoginScreen() {
@@ -15,6 +15,7 @@ export default function LoginScreen() {
   const router = useRouter();
 
   const signIn = async () => {
+    const supabase = getSupabase();
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,

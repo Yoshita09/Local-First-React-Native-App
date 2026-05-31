@@ -1,10 +1,11 @@
 import { Stack } from "expo-router";
-import { PowerSyncProvider } from "../powersync/PowerSyncProvider";
+import { useEffect } from "react";
+import { initDatabase } from "../lib/sqlite";
 
 export default function RootLayout() {
-  return (
-    <PowerSyncProvider>
-      <Stack screenOptions={{ headerShown: false }} />
-    </PowerSyncProvider>
-  );
+  useEffect(() => {
+    initDatabase();
+  }, []);
+
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

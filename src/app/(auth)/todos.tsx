@@ -1,117 +1,93 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
-  Alert,
-  FlatList,
-  StyleSheet,
+  View,
   Text,
   TextInput,
+  Button,
+  FlatList,
+  StyleSheet,
   TouchableOpacity,
-  View,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
-
-import { TODOS_TABLE, Todo } from "../../powersync/AppSchema";
-import { useSystem, system } from "../../powersync/PowerSync";
 import { supabase } from "../../lib/supabase";
-import { uuid } from "../../powersync/uuid";
+import {
+  addTodo,
+  deleteTodo,
+  getTodos,
+  initDatabase,
+  toggleTodo,
+  TodoItem,
+} from "../../lib/sqlite";
 
 export default function TodosScreen() {
   const router = useRouter();
-  const { db } = useSystem();
-
   const [task, setTask] = useState("");
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
 
-  const loadTodos = async () => {
-    const rows = await db.selectFrom(TODOS_TABLE).selectAll().execute();
-    setTodos(rows as Todo[]);
-  };
+  const refresh = () => setTodos(getTodos());
 
   useEffect(() => {
-    loadTodos();
+    initDatabase();
+    refresh();
   }, []);
 
-  const addTodo = async () => {
-    const text = task.trim();
-    if (!text) return;
+  const onAdd = () => {
+    const value = task.trim();
+    if (!value) return;
 
-    const { data } = await supabase.auth.getUser();
-    const user = data.user;
+    addTodo(value);
+    setTask("");
+    refresh();
+  };
 
-    if (!user) {
-      Alert.alert("Please sign in again.");
-      router.replace("/(auth)");
+  const onToggle = (item: TodoItem) => {
+    toggleTodo(item.id, item.is_complete);
+    refresh();
+  };
+
+  const onDelete = (id: string) => {
+    deleteTodo(id);
+    refresh();
+  };
+
+  const onLogout = async () => {
+    
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      Alert.alert("Logout failed", error.message);
       return;
     }
 
-    await db
-      .insertInto(TODOS_TABLE)
-      .values({
-        id: uuid(),
-        task: text,
-        user_id: user.id,
-        is_complete: 0,
-        modified_at: new Date().toISOString(),
-      })
-      .execute();
-
-    setTask("");
-    loadTodos();
-  };
-
-  const toggleTodo = async (todo: Todo) => {
-    await db
-      .updateTable(TODOS_TABLE)
-      .where("id", "=", todo.id)
-      .set({
-        is_complete: todo.is_complete === 1 ? 0 : 1,
-      })
-      .execute();
-
-    loadTodos();
-  };
-
-  const deleteTodo = async (todo: Todo) => {
-    await db.deleteFrom(TODOS_TABLE).where("id", "=", todo.id).execute();
-    loadTodos();
-  };
-
-  const signOut = async () => {
-    await system.powersync.disconnectAndClear?.();
-    await supabase.auth.signOut();
     router.replace("/(auth)");
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.topRow}>
+      <View style={styles.header}>
         <Text style={styles.title}>Todos</Text>
-        <TouchableOpacity onPress={signOut}>
-          <Ionicons name="log-out-outline" size={24} color="#000" />
-        </TouchableOpacity>
+        <Button title="Logout" onPress={onLogout} />
       </View>
 
       <View style={styles.inputRow}>
         <TextInput
-          placeholder="Add new task"
+          placeholder="Add a todo"
           value={task}
           onChangeText={setTask}
           style={styles.input}
         />
-        <TouchableOpacity onPress={addTodo} style={styles.addButton}>
-          <Ionicons name="add" size={22} color="#fff" />
-        </TouchableOpacity>
+        <Button title="Add" onPress={onAdd} />
       </View>
 
       <FlatList
         data={todos}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.todoRow}>
+          <View style={styles.row}>
             <TouchableOpacity
-              onPress={() => toggleTodo(item)}
               style={styles.todoTextWrap}
+              onPress={() => onToggle(item)}
             >
               <Text
                 style={[
@@ -123,9 +99,7 @@ export default function TodosScreen() {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => deleteTodo(item)}>
-              <Ionicons name="trash-outline" size={22} color="#d11" />
-            </TouchableOpacity>
+            <Button title="Del" onPress={() => onDelete(item.id)} />
           </View>
         )}
       />
@@ -137,14 +111,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
-    backgroundColor: "#fff",
     paddingTop: 60,
+    backgroundColor: "#fff",
   },
-  topRow: {
+  header: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 18,
+    alignItems: "center",
+    marginBottom: 20,
   },
   title: {
     fontSize: 28,
@@ -160,20 +134,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    padding: 12,
   },
-  addButton: {
-    width: 48,
-    borderRadius: 12,
-    backgroundColor: "#111",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  todoRow: {
+  row: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",

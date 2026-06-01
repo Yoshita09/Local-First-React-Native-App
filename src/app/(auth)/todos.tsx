@@ -8,17 +8,20 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  AppState,
 } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
 import { useRouter } from "expo-router";
-import { supabase } from "../../lib/supabase";
 import {
   addTodo,
   deleteTodo,
   getTodos,
   initDatabase,
+  syncPendingTodos,
   toggleTodo,
   TodoItem,
 } from "../../lib/sqlite";
+import { supabase } from "../../lib/supabase";
 
 export default function TodosScreen() {
   const router = useRouter();
@@ -27,40 +30,58 @@ export default function TodosScreen() {
 
   const refresh = () => setTodos(getTodos());
 
+  const syncNow = async () => {
+    await syncPendingTodos();
+    refresh();
+  };
+
   useEffect(() => {
     initDatabase();
     refresh();
+    syncNow();
+
+    const netSub = NetInfo.addEventListener((state) => {
+      if (state.isConnected) {
+        syncNow();
+      }
+    });
+
+    const appSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        syncNow();
+      }
+    });
+
+    return () => {
+      netSub();
+      appSub.remove();
+    };
   }, []);
 
-const onAdd = async () => {
-  const value = task.trim();
-  if (!value) return;
+  const onAdd = async () => {
+    const value = task.trim();
+    if (!value) return;
 
-  try {
-    const result = await addTodo(value);
-    setTask("");
-    refresh();
-
-    if (!result.synced) {
-      Alert.alert("Saved locally", "Could not upload to Supabase yet.");
+    try {
+      await addTodo(value);
+      setTask("");
+      refresh();
+    } catch (error: any) {
+      Alert.alert("Error", error.message ?? "Could not save todo.");
     }
-  } catch (error: any) {
-    Alert.alert("Error", error.message ?? "Could not save todo.");
-  }
-};
+  };
 
-  const onToggle = (item: TodoItem) => {
+  const onToggle = async (item: TodoItem) => {
     toggleTodo(item.id, item.is_complete);
     refresh();
   };
 
-  const onDelete = (id: string) => {
-    deleteTodo(id);
+  const onDelete = async (id: string) => {
+    await deleteTodo(id);
     refresh();
   };
 
   const onLogout = async () => {
-    
     const { error } = await supabase.auth.signOut();
 
     if (error) {
@@ -86,7 +107,6 @@ const onAdd = async () => {
           style={styles.input}
         />
         <Button title="Add" onPress={onAdd} />
-        
       </View>
 
       <FlatList
@@ -137,6 +157,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     marginBottom: 20,
+    alignItems: "center",
   },
   input: {
     flex: 1,

@@ -14,6 +14,7 @@ export type TodoItem = {
 };
 
 const db = SQLite.openDatabaseSync("myapp_v2.db");
+let syncing = false;
 
 export function initDatabase() {
   db.execSync(`
@@ -55,6 +56,7 @@ export async function addTodo(task: string) {
     throw new Error("No cached session found");
   }
 
+  // Save locally first
   db.runSync(
     `INSERT INTO todos (
       id, task, is_complete, created_at, updated_at, user_id, sync_status, is_deleted
@@ -62,6 +64,7 @@ export async function addTodo(task: string) {
     [id, task, now, now, userId]
   );
 
+  // Sync in background, do not block UI
   void syncPendingTodos();
 
   return { id, synced: false };
@@ -78,7 +81,7 @@ export function toggleTodo(id: string, currentValue: number) {
   void syncPendingTodos();
 }
 
-export async function deleteTodo(id: string) {
+export function deleteTodo(id: string) {
   const now = new Date().toISOString();
 
   db.runSync(
@@ -92,10 +95,12 @@ export async function deleteTodo(id: string) {
 }
 
 export async function syncPendingTodos() {
+  if (syncing) return 0;
+  syncing = true;
+
   try {
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id;
-
     if (!userId) return 0;
 
     const pending = db.getAllSync<TodoItem>(
@@ -117,6 +122,7 @@ export async function syncPendingTodos() {
             db.runSync(`DELETE FROM todos WHERE id = ?`, [todo.id]);
             syncedCount += 1;
           }
+
           continue;
         }
 
@@ -136,12 +142,14 @@ export async function syncPendingTodos() {
           syncedCount += 1;
         }
       } catch {
-        // keep it pending and try again later
+        // keep pending and retry later
       }
     }
 
     return syncedCount;
   } catch {
     return 0;
+  } finally {
+    syncing = false;
   }
 }

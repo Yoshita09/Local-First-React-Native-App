@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -10,8 +10,9 @@ import {
   Alert,
   AppState,
 } from "react-native";
-import NetInfo from "@react-native-community/netinfo";
 import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+
 import {
   addTodo,
   deleteTodo,
@@ -27,6 +28,7 @@ export default function TodosScreen() {
   const router = useRouter();
   const [task, setTask] = useState("");
   const [todos, setTodos] = useState<TodoItem[]>([]);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = () => setTodos(getTodos());
 
@@ -38,22 +40,22 @@ export default function TodosScreen() {
   useEffect(() => {
     initDatabase();
     refresh();
-    syncNow();
 
-    const netSub = NetInfo.addEventListener((state) => {
-      if (state.isConnected) {
-        syncNow();
-      }
-    });
+    void syncNow();
+
+    // retry every few seconds while screen is open
+    intervalRef.current = setInterval(() => {
+      void syncNow();
+    }, 5000);
 
     const appSub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        syncNow();
+        void syncNow();
       }
     });
 
     return () => {
-      netSub();
+      if (intervalRef.current) clearInterval(intervalRef.current);
       appSub.remove();
     };
   }, []);
@@ -71,14 +73,16 @@ export default function TodosScreen() {
     }
   };
 
-  const onToggle = async (item: TodoItem) => {
+  const onToggle = (item: TodoItem) => {
     toggleTodo(item.id, item.is_complete);
     refresh();
+    void syncNow();
   };
 
-  const onDelete = async (id: string) => {
-    await deleteTodo(id);
+  const onDelete = (id: string) => {
+    deleteTodo(id);
     refresh();
+    void syncNow();
   };
 
   const onLogout = async () => {
@@ -93,54 +97,59 @@ export default function TodosScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Todos</Text>
-        <Button title="Logout" onPress={onLogout} />
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Todos</Text>
+          <Button title="Logout" onPress={onLogout} />
+        </View>
 
-      <View style={styles.inputRow}>
-        <TextInput
-          placeholder="Add a todo"
-          value={task}
-          onChangeText={setTask}
-          style={styles.input}
-        />
-        <Button title="Add" onPress={onAdd} />
-      </View>
+        <View style={styles.inputRow}>
+          <TextInput
+            placeholder="Add a todo"
+            value={task}
+            onChangeText={setTask}
+            style={styles.input}
+          />
+          <Button title="Add" onPress={onAdd} />
+        </View>
 
-      <FlatList
-        data={todos}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <TouchableOpacity
-              style={styles.todoTextWrap}
-              onPress={() => onToggle(item)}
-            >
-              <Text
-                style={[
-                  styles.todoText,
-                  item.is_complete === 1 && styles.doneText,
-                ]}
+        <FlatList
+          data={todos}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.row}>
+              <TouchableOpacity
+                style={styles.todoTextWrap}
+                onPress={() => onToggle(item)}
               >
-                {item.task}
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.todoText,
+                    item.is_complete === 1 && styles.doneText,
+                  ]}
+                >
+                  {item.task}
+                </Text>
+              </TouchableOpacity>
 
-            <Button title="Del" onPress={() => onDelete(item.id)} />
-          </View>
-        )}
-      />
-    </View>
+              <Button title="Del" onPress={() => onDelete(item.id)} />
+            </View>
+          )}
+        />
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
   container: {
     flex: 1,
     padding: 20,
-    paddingTop: 60,
     backgroundColor: "#fff",
   },
   header: {
@@ -148,10 +157,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 20,
+    marginTop: 8,
   },
   title: {
     fontSize: 28,
     fontWeight: "700",
+    flexShrink: 1,
+    paddingRight: 12,
   },
   inputRow: {
     flexDirection: "row",
